@@ -140,8 +140,10 @@ void CanvasSystem::OnUpdate(Ubpa::UECS::Schedule& schedule) {
 			ImGui::Checkbox("Chordal parameterization", &data->showCruve6);
 			ImGui::Checkbox("Centripetal parameterization", &data->showCruve7);
 			ImGui::Checkbox("Foley parameterization", &data->showCruve8);
-			ImGui::Text("！！！！！！！！！！！！");
+			ImGui::Text("Creat mode:");
 			ImGui::Checkbox("Cubic cruve", &data->cubic);
+			ImGui::Text("Edit mode:");
+			ImGui::Checkbox("Edit", &data->edit);
 
 
 			// Typically you would use a BeginChild()/EndChild() pair to benefit from a clipping region + own scrolling.
@@ -176,19 +178,42 @@ void CanvasSystem::OnUpdate(Ubpa::UECS::Schedule& schedule) {
 			const pointf2 mouse_pos_in_canvas(io.MousePos.x - origin.x, io.MousePos.y - origin.y);
 
 			// Add first and second point
+			int edit_index = 0;
+			if (is_hovered) {
+				float dist = 0;
+				int index = 0;
+				for (int n = 0; n < data->points.size(); n += 2) {
+					dist = pow(pow(data->points[n + 1][0] - mouse_pos_in_canvas[0], 2) + pow(data->points[n + 1][1] - mouse_pos_in_canvas[1], 2), 0.5);
+					if (dist < 20) {
+						edit_index = n + 1;
+					}
+					index++;
+				}
+
+			}
 			if (is_hovered && !data->adding_line && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
 			{
-				data->points.push_back(mouse_pos_in_canvas);
-				data->points.push_back(mouse_pos_in_canvas);
-				data->adding_line = true;
+				if (data->edit) {
+					data->editing = true;
+				}
+				else {
+					data->points.push_back(mouse_pos_in_canvas);
+					data->points.push_back(mouse_pos_in_canvas);
+					data->adding_line = true;
+				}
 			}
 			if (data->adding_line)
 			{
 				data->points.back() = mouse_pos_in_canvas;
 				if (!ImGui::IsMouseDown(ImGuiMouseButton_Left))
 					data->adding_line = false;
+				
 			}
-
+			if (data->editing) {
+				data->points[edit_index] = mouse_pos_in_canvas;
+				if (!ImGui::IsMouseDown(ImGuiMouseButton_Left))
+					data->editing = false;
+			}
 			// Pan (we use a zero mouse threshold when there's no context menu)
 			// You may decide to make that threshold dynamic based on whether the mouse is hovering something etc.
 			const float mouse_threshold_for_pan = data->opt_enable_context_menu ? -1.0f : 0.0f;
@@ -513,10 +538,8 @@ void CanvasSystem::OnUpdate(Ubpa::UECS::Schedule& schedule) {
 					else {
 						t_veh[index] = t_veh[index - 1] + pow(pow(pow(x_veh[index] - x_veh[index - 1], 2) + pow(y_veh[index] - y_veh[index - 1], 2), 0.5), 0.5);
 					}
-
 					index++;
 				}
-				Eigen::MatrixXd A(N - 1, N - 1);
 				Eigen::VectorXd h(N - 1);
 				Eigen::VectorXd u(N - 1);
 				Eigen::VectorXd b_x(N - 1);
@@ -528,26 +551,32 @@ void CanvasSystem::OnUpdate(Ubpa::UECS::Schedule& schedule) {
 					b_x[i] = 6 * (x_veh[i + 1] - x_veh[i]) / h[i];
 					b_y[i] = 6 * (y_veh[i + 1] - y_veh[i]) / h[i];
 				}
+				Eigen::VectorXd h1 = h;
 				for (int i = 1; i < N - 1;i++) {
 					u[i-1] = 2 * (h[i] + h[i - 1]);
 					v_x[i-1] = b_x[i] - b_x[i - 1];
 					v_y[i-1] = b_y[i] - b_y[i - 1];
 				}
-				for (int i = 0; i < N - 1;i++) {
-					if (i < N - 2) {
-						A(i, i + 1) = h[i+1];
-						A(i + 1, i) = h[i+1];
-					}
-					A(i, i) = u[i];
+				h1[0] = h1[0] / u[0];
+				v_x[0] = v_x[0] / u[0];
+				v_y[0] = v_y[0] / u[0];
+
+				for (int i = 1; i < N-1; i++) {
+					float m1 = 1.0f / (u[i] - h1[i] * h1[i - 1]);
+					h1[i] = h1[i] * m1;
+					v_x[i] = (v_x[i] - h1[i] * v_x[i - 1]) * m1;
+					v_y[i] = (v_y[i] - h1[i] * v_y[i - 1]) * m1;
 				}
-				auto Q = A.householderQr();
-				auto m_x = Q.solve(v_x);
-				auto m_y = Q.solve(v_y);
+
+				for (int i = N - 2; i-- > 0; ) {
+					v_x[i] = v_x[i] - h1[i] * v_x[i + 1];
+					v_y[i] = v_y[i] - h1[i] * v_y[i + 1];
+				}
 				VectorXd m_x1(N + 1);
 				VectorXd m_y1(N + 1);
 				for (int i = 1; i < N;i++) {
-					m_x1[i] = m_x[i-1];
-					m_y1[i] = m_y[i-1];
+					m_x1[i] = v_x[i-1];
+					m_y1[i] = v_y[i-1];
 				}
 				m_x1[0] = 0;
 				m_y1[0] = 0;
@@ -560,9 +589,8 @@ void CanvasSystem::OnUpdate(Ubpa::UECS::Schedule& schedule) {
 						segment += 1;
 					}
 					if (segment >= N - 1) {
-						double x = S_1(m_x, h, x_veh, t_veh, segment, i);
-						double y = S_1(m_y, h, y_veh, t_veh, segment, i);
-
+						double x = S_1(m_x1, h, x_veh, t_veh, segment, i);
+						double y = S_1(m_y1, h, y_veh, t_veh, segment, i);
 						draw_list->AddCircleFilled(ImVec2(origin.x + x, origin.y + y), 2.0f, IM_COL32(233, 0, 50, 255), 12);
 						break;
 					}
@@ -572,7 +600,11 @@ void CanvasSystem::OnUpdate(Ubpa::UECS::Schedule& schedule) {
 					draw_list->AddCircleFilled(ImVec2(origin.x + x, origin.y + y), 2.0f, IM_COL32(233, 0, 50, 255), 12);
 				}
 			}
-			
+			if (data->edit) {
+				for (int n = 0; n < data->points.size(); n += 2) {
+					
+				}
+			}
 			if (data->opt_enable_grid)
 			{
 				const float GRID_STEP = 64.0f;
