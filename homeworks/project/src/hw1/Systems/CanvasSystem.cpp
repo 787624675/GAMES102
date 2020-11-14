@@ -13,6 +13,13 @@
 using namespace std;
 using namespace Eigen;
 using namespace Ubpa;
+double S_1(Eigen::VectorXd m, Eigen::VectorXd h, Eigen::VectorXd myvar, Eigen::VectorXd T_1, int segment1, double t1) {
+	double res = m[segment1] * pow(T_1[segment1 + 1] - t1, 3) / (6 * h[segment1]) 
+		+ m[segment1 + 1] * pow(t1 - T_1[segment1], 3) / (6 * h[segment1]) 
+		+ (myvar[segment1 + 1] / h[segment1] - m[segment1 + 1] * h[segment1] / 6) * (t1 - T_1[segment1])
+		+ (myvar[segment1] / h[segment1] - m[segment1] * h[segment1] / 6) * (T_1[segment1 + 1] - t1);
+	return res;
+}
 double find_min_x(Eigen::VectorXd xvals) {
 	int res = xvals[0];
 	for (int i = 1;i < xvals.size();i++) {
@@ -484,12 +491,86 @@ void CanvasSystem::OnUpdate(Ubpa::UECS::Schedule& schedule) {
 					draw_list->AddCircleFilled(ImVec2(origin.x + x, origin.y + y), 2.0f, IM_COL32(203, 100, 10, 255), 12);
 				}
 			}
-			double S(VectorXd m, VectorXd h, VectorXd var, VectorXd T, int segment, double t) {
-				double res = m[segment] * pow(T[i + 1] - t, 3) / (6 * h[segment])
-					+ m[segment + 1] * pow(t - T[i], 3) / (6 * h[segment])
-					+ (var[i + 1] / h[i] - m[i + 1] * h[i] / 6) * (t - T[i])
-					+ (var[i] / h[i] - m[i] * h[i] / 6) * (T[i + 1] - t);
-				return res;
+			
+			// Cubic
+			if (data->cubic) {
+				// chordal parameterization
+				// Here are the parameters, x and y
+				int N = 0;
+				for (int n = 0; n < data->points.size(); n += 2) {
+					N++;
+				}
+				VectorXd x_veh(N);
+				VectorXd y_veh(N);
+				VectorXd t_veh(N);
+				int index = 0;
+				for (int n = 0; n < data->points.size(); n += 2) {
+					x_veh[index] = data->points[n + 1][0];
+					y_veh[index] = data->points[n + 1][1];
+					if (index == 0) {
+						t_veh[0] = 0;
+					}
+					else {
+						t_veh[index] = t_veh[index - 1] + pow(pow(pow(x_veh[index] - x_veh[index - 1], 2) + pow(y_veh[index] - y_veh[index - 1], 2), 0.5), 0.5);
+					}
+
+					index++;
+				}
+				Eigen::MatrixXd A(N - 1, N - 1);
+				Eigen::VectorXd h(N - 1);
+				Eigen::VectorXd u(N - 1);
+				Eigen::VectorXd b_x(N - 1);
+				Eigen::VectorXd b_y(N - 1);
+				Eigen::VectorXd v_x(N - 1);
+				Eigen::VectorXd v_y(N - 1);
+				for (int i = 0; i < N - 1;i++) {
+					h[i] = t_veh[i + 1] - t_veh[i];
+					b_x[i] = 6 * (x_veh[i + 1] - x_veh[i]) / h[i];
+					b_y[i] = 6 * (y_veh[i + 1] - y_veh[i]) / h[i];
+				}
+				for (int i = 1; i < N - 1;i++) {
+					u[i-1] = 2 * (h[i] + h[i - 1]);
+					v_x[i-1] = b_x[i] - b_x[i - 1];
+					v_y[i-1] = b_y[i] - b_y[i - 1];
+				}
+				for (int i = 0; i < N - 1;i++) {
+					if (i < N - 2) {
+						A(i, i + 1) = h[i+1];
+						A(i + 1, i) = h[i+1];
+					}
+					A(i, i) = u[i];
+				}
+				auto Q = A.householderQr();
+				auto m_x = Q.solve(v_x);
+				auto m_y = Q.solve(v_y);
+				VectorXd m_x1(N + 1);
+				VectorXd m_y1(N + 1);
+				for (int i = 1; i < N;i++) {
+					m_x1[i] = m_x[i-1];
+					m_y1[i] = m_y[i-1];
+				}
+				m_x1[0] = 0;
+				m_y1[0] = 0;
+				m_x1[N] = 0;
+				m_y1[N] = 0;
+				int segment = 0;
+				for (double i = 1;i < t_veh[N-1]; i += 0.1)
+				{
+					if (i > t_veh[segment+1]) {
+						segment += 1;
+					}
+					if (segment >= N - 1) {
+						double x = S_1(m_x, h, x_veh, t_veh, segment, i);
+						double y = S_1(m_y, h, y_veh, t_veh, segment, i);
+
+						draw_list->AddCircleFilled(ImVec2(origin.x + x, origin.y + y), 2.0f, IM_COL32(233, 0, 50, 255), 12);
+						break;
+					}
+					double x = S_1(m_x1, h, x_veh, t_veh, segment, i);
+					double y = S_1(m_y1, h, y_veh, t_veh, segment, i);
+
+					draw_list->AddCircleFilled(ImVec2(origin.x + x, origin.y + y), 2.0f, IM_COL32(233, 0, 50, 255), 12);
+				}
 			}
 			
 			if (data->opt_enable_grid)
