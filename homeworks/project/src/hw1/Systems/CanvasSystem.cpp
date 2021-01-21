@@ -122,31 +122,6 @@ Eigen::VectorXd polyappro_op(Eigen::VectorXd xvals, Eigen::VectorXd yvals, int o
 	auto result = B.inverse()*A.transpose()*yvals;
 	return result;
 }
-double hermite(int N, double x, Eigen::VectorXd xi, Eigen::VectorXd yi, Eigen::VectorXd dyi)
-{
-	int i, j;
-	double li, sum, y;
-	Eigen::VectorXd gix(N);
-	Eigen::VectorXd hix(N);
-	for (i = 0;i < N;i++)
-	{
-		li = 1.0; sum = 0.0;
-		for (j = 0;j < N;j++)
-			if (j != i)
-			{
-				li = li * (x - xi[j]) / (xi[i] - xi[j]);   
-				sum = sum + 1.0 / (xi[i] - xi[j]);
-			}
-		li = li * li;
-		gix[i] = (1.0 - 2.0 * (x - xi[i]) * sum) * li;
-		hix[i] = (x - xi[i]) * li;
-	}
-	y = 0.0;
-	for (i = 0;i < N;i++) y = y + yi[i] * gix[i] + dyi[i] * hix[i];
-	return y;
-}
-void CubicSpline(std::vector<Ubpa::pointf2>&, std::vector<Ubpa::pointf2>&, std::vector<Slope>&, bool);
-void SlopeSpline(std::vector<Ubpa::pointf2>&, std::vector<Ubpa::pointf2>&, std::vector<Slope>&);
 void CanvasSystem::OnUpdate(Ubpa::UECS::Schedule& schedule) {
 	schedule.RegisterCommand([](Ubpa::UECS::World* w) {
 		auto data = w->entityMngr.GetSingleton<CanvasData>();
@@ -167,13 +142,8 @@ void CanvasSystem::OnUpdate(Ubpa::UECS::Schedule& schedule) {
 			ImGui::Checkbox("Foley parameterization", &data->showCruve8);
 			ImGui::Text("Creat mode:");
 			ImGui::Checkbox("Cubic cruve", &data->cubic);
-			ImGui::Checkbox("Hermit cruve", &data->hermit);
 			ImGui::Text("Edit mode:");
 			ImGui::Checkbox("Edit", &data->edit);
-			static float m_mul = 1.0f;
-			static float h_mul = 0.0f;
-			ImGui::SliderFloat("direction", &m_mul, -1.0f, 1.0f);
-			ImGui::SliderFloat("length", &h_mul, -10.0f, 10.0f);
 
 
 			// Typically you would use a BeginChild()/EndChild() pair to benefit from a clipping region + own scrolling.
@@ -208,21 +178,19 @@ void CanvasSystem::OnUpdate(Ubpa::UECS::Schedule& schedule) {
 			const pointf2 mouse_pos_in_canvas(io.MousePos.x - origin.x, io.MousePos.y - origin.y);
 
 			// Add first and second point
-			
-			float dist = 0;
-			int index = 0;
-			for (int n = 0; n < data->points.size(); n += 2) {
-				dist = pow(pow(data->points[n + 1][0] - mouse_pos_in_canvas[0], 2) + pow(data->points[n + 1][1] - mouse_pos_in_canvas[1], 2), 0.5);
-				if (dist < 20) {
-					data->edit_index = n + 1;
-					m_mul = 1.0f;
-					h_mul = 0.0f;
+			int edit_index = 0;
+			if (is_hovered) {
+				float dist = 0;
+				int index = 0;
+				for (int n = 0; n < data->points.size(); n += 2) {
+					dist = pow(pow(data->points[n + 1][0] - mouse_pos_in_canvas[0], 2) + pow(data->points[n + 1][1] - mouse_pos_in_canvas[1], 2), 0.5);
+					if (dist < 20) {
+						edit_index = n + 1;
+					}
+					index++;
 				}
-				index++;
-			}
 
-			
-			
+			}
 			if (is_hovered && !data->adding_line && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
 			{
 				if (data->edit) {
@@ -242,7 +210,7 @@ void CanvasSystem::OnUpdate(Ubpa::UECS::Schedule& schedule) {
 				
 			}
 			if (data->editing) {
-				data->points[data->edit_index] = mouse_pos_in_canvas;
+				data->points[edit_index] = mouse_pos_in_canvas;
 				if (!ImGui::IsMouseDown(ImGuiMouseButton_Left))
 					data->editing = false;
 			}
@@ -572,10 +540,6 @@ void CanvasSystem::OnUpdate(Ubpa::UECS::Schedule& schedule) {
 					}
 					index++;
 				}
-				if (data->edit) {
-					t_veh[data->edit_index/2] *= m_mul;
-					t_veh[data->edit_index/2] += h_mul;
-				}
 				Eigen::VectorXd h(N - 1);
 				Eigen::VectorXd u(N - 1);
 				Eigen::VectorXd b_x(N - 1);
@@ -619,7 +583,6 @@ void CanvasSystem::OnUpdate(Ubpa::UECS::Schedule& schedule) {
 				m_x1[N] = 0;
 				m_y1[N] = 0;
 				int segment = 0;
-				
 				for (double i = 1;i < t_veh[N-1]; i += 0.1)
 				{
 					if (i > t_veh[segment+1]) {
@@ -637,87 +600,10 @@ void CanvasSystem::OnUpdate(Ubpa::UECS::Schedule& schedule) {
 					draw_list->AddCircleFilled(ImVec2(origin.x + x, origin.y + y), 2.0f, IM_COL32(233, 0, 50, 255), 12);
 				}
 			}
-			if (data->hermit) {
-				// chordal parameterization
-				// Here are the parameters, x and y
-				int N = 0;
+			if (data->edit) {
 				for (int n = 0; n < data->points.size(); n += 2) {
-					N++;
+					
 				}
-				VectorXd x_veh(N);
-				VectorXd y_veh(N);
-				VectorXd t_veh(N);
-				int index = 0;
-				for (int n = 0; n < data->points.size(); n += 2) {
-					x_veh[index] = data->points[n + 1][0];
-					y_veh[index] = data->points[n + 1][1];
-					if (index == 0) {
-						t_veh[0] = 0;
-					}
-					else {
-						t_veh[index] = t_veh[index - 1] + pow(pow(pow(x_veh[index] - x_veh[index - 1], 2) + pow(y_veh[index] - y_veh[index - 1], 2), 0.5), 0.5);
-					}
-					index++;
-				}
-				Eigen::VectorXd h(N - 1);
-				Eigen::VectorXd u(N - 1);
-				Eigen::VectorXd b_x(N - 1);
-				Eigen::VectorXd b_y(N - 1);
-				Eigen::VectorXd v_x(N - 1);
-				Eigen::VectorXd v_y(N - 1);
-				for (int i = 0; i < N - 1;i++) {
-					h[i] = t_veh[i + 1] - t_veh[i];
-					b_x[i] = 6 * (x_veh[i + 1] - x_veh[i]) / h[i];
-					b_y[i] = 6 * (y_veh[i + 1] - y_veh[i]) / h[i];
-				}
-				Eigen::VectorXd h1 = h;
-				for (int i = 1; i < N - 1;i++) {
-					u[i - 1] = 2 * (h[i] + h[i - 1]);
-					v_x[i - 1] = b_x[i] - b_x[i - 1];
-					v_y[i - 1] = b_y[i] - b_y[i - 1];
-				}
-				h1[0] = h1[0] / u[0];
-				v_x[0] = v_x[0] / u[0];
-				v_y[0] = v_y[0] / u[0];
-
-				for (int i = 1; i < N - 1; i++) {
-					float m1 = 1.0f / (u[i] - h1[i] * h1[i - 1]);
-					h1[i] = h1[i] * m1;
-					v_x[i] = (v_x[i] - h1[i] * v_x[i - 1]) * m1;
-					v_y[i] = (v_y[i] - h1[i] * v_y[i - 1]) * m1;
-				}
-
-				for (int i = N - 2; i-- > 0; ) {
-					v_x[i] = v_x[i] - h1[i] * v_x[i + 1];
-					v_y[i] = v_y[i] - h1[i] * v_y[i + 1];
-				}
-				VectorXd m_x1(N + 1);
-				VectorXd m_y1(N + 1);
-				for (int i = 1; i < N;i++) {
-					m_x1[i] = v_x[i - 1];
-					m_y1[i] = v_y[i - 1];
-				}
-				m_x1[0] = 0;
-				m_y1[0] = 0;
-				m_x1[N] = 0;
-				m_y1[N] = 0;
-				VectorXd diff_x(N);
-				VectorXd diff_y(N);
-				for (int i = 0; i < N-1; i++) {
-					// differential coefficient 
-					diff_x[i] = h[i] * m_x1[i] / 6 + h[i] * m_x1[i + 1] / 3 - x_veh[i] / h[i] + x_veh[i + 1] / h[i];
-					diff_x[i] = h[i] * m_y1[i] / 6 + h[i] * m_y1[i + 1] / 3 - y_veh[i] / h[i] + y_veh[i + 1] / h[i];
-				}
-				diff_x[N - 1] = 0;
-				diff_y[N - 1] = 0;
-				for (double i = 1;i < t_veh[N - 1]; i += 0.1)
-				{
-					double x = hermite(N,i, t_veh, x_veh, diff_x);
-					double y = hermite(N,i, t_veh, y_veh, diff_y);
-
-					draw_list->AddCircleFilled(ImVec2(origin.x + x, origin.y + y), 2.0f, IM_COL32(50, 0, 255, 255), 12);
-				}
-
 			}
 			if (data->opt_enable_grid)
 			{
@@ -727,69 +613,11 @@ void CanvasSystem::OnUpdate(Ubpa::UECS::Schedule& schedule) {
 				for (float y = fmodf(data->scrolling[1], GRID_STEP); y < canvas_sz.y; y += GRID_STEP)
 					draw_list->AddLine(ImVec2(canvas_p0.x, canvas_p0.y + y), ImVec2(canvas_p1.x, canvas_p0.y + y), IM_COL32(200, 200, 200, 40));
 			}
-			if (!data->enable_add_point) {
-				if (data->edit_point == 0) {
-					if (ImGui::MenuItem("Edit Points' position", NULL, false, data->points.size() > 0))
-						data->edit_point = 1;
-					if (data->fitting_type == 0) {
-						if (ImGui::MenuItem("Edit Points' slope (G0)", NULL, false))
-							data->edit_point = 2;
-						if (ImGui::MenuItem("Edit Points' slope (G1)", NULL, false))
-							data->edit_point = 3;
-					}
-				}
-				else {
-					if (ImGui::MenuItem("Cancel Edit Points", NULL, false, data->points.size() > 0))
-						data->edit_point = 0;
-				}
-				if (ImGui::MenuItem("Enable Add Points", NULL, false))
-					data->enable_add_point = true, data->edit_point = 0;
-			}
-			for (int n = 0; n < data->points.size(); n += 2) {
-				
-				if (n+1 == data->edit_index) {
-					draw_list->AddCircleFilled(ImVec2(origin.x + data->points[n + 1][0], origin.y + data->points[n + 1][1]), 4.0f, IM_COL32(0, 0, 255, 255), 12);
-				}
-				else {
-					draw_list->AddCircleFilled(ImVec2(origin.x + data->points[n + 1][0], origin.y + data->points[n + 1][1]), 2.0f, IM_COL32(255, 255, 0, 255), 12);
-
-				}
-				 
-				
-			}
-				
+			for (int n = 0; n < data->points.size(); n += 2)
+				draw_list->AddCircleFilled(ImVec2(origin.x + data->points[n + 1][0], origin.y + data->points[n + 1][1]), 2.0f, IM_COL32(255, 255, 0, 255), 12);
 			draw_list->PopClipRect();
 		}
 
 		ImGui::End();
 	});
-}
-inline float h0(const float x0, const float x1, const float x) {
-	return (1.f + 2.f * (x - x0) / (x1 - x0)) * ((x - x1) * (x - x1)) / ((x0 - x1) * (x0 - x1));
-}
-inline float h1(const float x0, const float x1, const float x) {
-	return h0(x1, x0, x);
-}
-inline float H0(const float x0, const float x1, const float x) {
-	return (x - x0) * ((x - x1) * (x - x1)) / ((x0 - x1) * (x0 - x1));
-}
-inline float H1(const float x0, const float x1, const float x) {
-	return H0(x1, x0, x);
-}
-void SlopeSpline(std::vector<Ubpa::pointf2>& ret, std::vector<Ubpa::pointf2>& p, std::vector<Slope>& k) {
-	//spdlog::info("SlopeSpline");
-	for (int i = 0; i < p.size() - 1; i++) {
-		float y0 = p[i][1];
-		float y1 = p[i + 1][1];
-		float dy0 = k[i].r;
-		float dy1 = k[i + 1].l;
-		for (float x = p[i][0]; x <= p[i + 1][0]; x += t_step) {
-			//S = h0*y0 + h1*y1 + dy0*H0 + dy1*H1;
-			ret.push_back(Ubpa::pointf2(x,
-				y0 * h0(p[i][0], p[i + 1][0], x) +
-				y1 * h1(p[i][0], p[i + 1][0], x) +
-				dy0 * H0(p[i][0], p[i + 1][0], x) +
-				dy1 * H1(p[i][0], p[i + 1][0], x)));
-		}
-	}
 }
