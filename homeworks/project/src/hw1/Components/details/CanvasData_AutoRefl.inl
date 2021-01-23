@@ -5,6 +5,31 @@
 #include <USRefl/USRefl.h>
 
 template<>
+struct Ubpa::USRefl::TypeInfo<Slope>
+    : Ubpa::USRefl::TypeInfoBase<Slope>
+{
+    static constexpr AttrList attrs = {};
+
+    static constexpr FieldList fields = {
+        Field{"l", &Slope::l},
+        Field{"r", &Slope::r},
+    };
+};
+
+template<>
+struct Ubpa::USRefl::TypeInfo<Ratio>
+    : Ubpa::USRefl::TypeInfoBase<Ratio>
+{
+    static constexpr AttrList attrs = {};
+
+    static constexpr FieldList fields = {
+        Field{"l", &Ratio::l},
+        Field{"r", &Ratio::r},
+        Field{Name::constructor, WrapConstructor<Ratio()>()},
+    };
+};
+
+template<>
 struct Ubpa::USRefl::TypeInfo<CanvasData>
     : Ubpa::USRefl::TypeInfoBase<CanvasData>
 {
@@ -12,14 +37,27 @@ struct Ubpa::USRefl::TypeInfo<CanvasData>
 
     static constexpr FieldList fields = {
         Field{"points", &CanvasData::points},
+        Field{"ltangent", &CanvasData::ltangent},
+        Field{"rtangent", &CanvasData::rtangent},
+        Field{"tangent_ratio", &CanvasData::tangent_ratio},
+        Field{"xk", &CanvasData::xk},
+        Field{"yk", &CanvasData::yk},
         Field{"scrolling", &CanvasData::scrolling},
         Field{"opt_enable_grid", &CanvasData::opt_enable_grid},
         Field{"opt_enable_context_menu", &CanvasData::opt_enable_context_menu},
         Field{"adding_line", &CanvasData::adding_line},
-        Field{"showCruve1", &CanvasData::showCruve1},
-        Field{"showCruve2", &CanvasData::showCruve2},
-        Field{"showCruve3", &CanvasData::showCruve3},
-        Field{"showCruve4", &CanvasData::showCruve4},
+        Field{"param_type", &CanvasData::param_type},
+        Field{"fitting_type", &CanvasData::fitting_type},
+        Field{"enable_add_point", &CanvasData::enable_add_point},
+        Field{"adding_last_point", &CanvasData::adding_last_point},
+        Field{"edit_point", &CanvasData::edit_point},
+        Field{"editing_index", &CanvasData::editing_index},
+        Field{"enable_move_point", &CanvasData::enable_move_point},
+        Field{"editing_tan_index", &CanvasData::editing_tan_index},
+        Field{"enable_move_tan", &CanvasData::enable_move_tan},
+        Field{"pop_back", &CanvasData::pop_back},
+        Field{"clear", &CanvasData::clear},
+        Field{"push_back", &CanvasData::push_back},
     };
 };
 
