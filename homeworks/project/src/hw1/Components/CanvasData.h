@@ -1,9 +1,23 @@
 #pragma once
 
 #include <UGM/UGM.h>
+struct Slope {
+	float l;
+	float r;
+};
 
+struct Ratio {
+	float l;
+	float r;
+	Ratio() { l = r = 1.f; }
+};
 struct CanvasData {
 	std::vector<Ubpa::pointf2> points;
+	std::vector<Ubpa::pointf2> ltangent;
+	std::vector<Ubpa::pointf2> rtangent;
+	std::vector<Ratio> tangent_ratio;
+	std::vector<Slope> xk;
+	std::vector<Slope> yk;
 	Ubpa::valf2 scrolling{ 0.f,0.f };
 	bool opt_enable_grid{ true };
 	bool opt_enable_context_menu{ true };
@@ -18,7 +32,14 @@ struct CanvasData {
 	bool showCruve7{ false };  // 7.Centripetal parameterization
 	bool showCruve8{ false };  // 8.Foley parameterization
 	bool cubic{ false };  // Creat editable cubic spline cruve
-	bool edit{ false };   // �༭ģʽ
+	bool bezier{ false };  // Creat editable cubic spline cruve
+	bool edit{ false };   // edit mode
+	bool g0{ false };   // edit mode
+	bool g1{ false };   // edit mode
+	bool edit_tan{ false };
+	bool editing_tan{ false };
+	bool edit_flag{ false };   // whather the tangent line have been edited
+	int editing_tan_index;
 
 };
 
