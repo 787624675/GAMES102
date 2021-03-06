@@ -39,7 +39,12 @@ struct CanvasData {
 	bool edit_tan{ false };
 	bool editing_tan{ false };
 	bool edit_flag{ false };   // whather the tangent line have been edited
+	bool chaiukin_sub{ false };
+	bool cubic_sub{ false };
+	bool inter_sub{ false };
 	int editing_tan_index;
+	int chaiukin_num;
+	float alpha;
 
 };
 

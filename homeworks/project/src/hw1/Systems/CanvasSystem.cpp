@@ -10,9 +10,17 @@
 
 #include <Eigen/Dense>
 
+
+#include "spdlog/spdlog.h"
+#include "spdlog/fmt/ostr.h"
+#include <memory>
+#include <iostream>
 using namespace std;
 using namespace Eigen;
 using namespace Ubpa;
+//namespace spd = spdlog;
+//auto console = spd::stdout_color_mt("console");
+
 constexpr int sample_num = 50;
 constexpr float base_tangent_len = 50.f;
 constexpr float t_step = 1.f / (sample_num - 1);
@@ -153,7 +161,74 @@ void DeCasteljau(std::vector<Ubpa::pointf2>& ret, Ubpa::pointf2* p) {
 		ret.push_back(Ubpa::pointf2(x, y));
 	}
 }
+vector<Ubpa::pointf2> chaiukin_subdivide(vector<Ubpa::pointf2> points, bool circle) {
+	vector<Ubpa::pointf2> new_points;
+	for (int j = 0; j < points.size();j++) {
+		if (j != 0) {
+			new_points.push_back(Ubpa::pointf2(0.25 * points[j - 1][0] + 0.75 * points[j][0],
+				0.25 * points[j - 1][1] + 0.75 * points[j][1]));
+		}
+		// new_points.push_back(points[j]);
+		if (j != points.size() - 1) {
+			new_points.push_back(Ubpa::pointf2(0.75 * points[j][0] + 0.25 * points[j + 1][0],
+				0.75 * points[j][1] + 0.25 * points[j + 1][1]));
+		}
 
+	}
+	return new_points;
+}
+vector<Ubpa::pointf2> cubic_subdivide(vector<Ubpa::pointf2> points, bool circle) {
+	vector<Ubpa::pointf2> new_points;
+	for (int j = 0; j < points.size();j++) {
+		if (j != 0&& j != points.size() - 1) {
+			new_points.push_back(Ubpa::pointf2(0.125 * points[j - 1][0] + 0.75 * points[j][0]+0.125* points[j+1][0],
+				0.125 * points[j - 1][1] + 0.75 * points[j][1]+0.125* points[j+1][1]));
+		}
+		// new_points.push_back(points[j]);
+		if (j != points.size() - 1) {
+			new_points.push_back(Ubpa::pointf2(0.5 * points[j][0] + 0.5 * points[j + 1][0],
+				0.5 * points[j][1] + 0.5 * points[j + 1][1]));
+		}
+
+	}
+	return new_points;
+}
+vector<Ubpa::pointf2> inter_subdivide(vector<Ubpa::pointf2> points, bool circle, float alpha) {
+	vector<Ubpa::pointf2> new_points;
+	if (circle == true) {
+		for (int j = 0; j < points.size();j++) {
+			new_points.push_back(points[j]);
+			if (j != 0 && j < points.size() - 2) {
+				new_points.push_back(Ubpa::pointf2( 0.5*(points[j][0] +  points[j+1][0]) + 
+					alpha*(0.5 * (points[j][0] + points[j + 1][0])- 0.5 * (points[j-1][0] + points[j + 2][0])),
+					0.5 * (points[j][1] + points[j + 1][1]) +
+					alpha * (0.5 * (points[j][1] + points[j + 1][1]) - 0.5 * (points[j - 1][1] + points[j + 2][1]))));
+			}
+
+			if (j == points.size() - 1) {  // j = points.size()-1, j+1 = 0, j+2 = 1,j -1 = points.size()-2
+				new_points.push_back(Ubpa::pointf2(0.5 * (points[points.size()-1][0] + points[0][0]) +
+					alpha * (0.5 * (points[points.size() - 1][0] + points[0][0]) - 0.5 * (points[points.size() - 2][0] + points[1][0])),
+					0.5 * (points[points.size() - 1][1] + points[0][1]) +
+					alpha * (0.5 * (points[points.size() - 1][1] + points[0][1]) - 0.5 * (points[points.size() - 2][1] + points[1][1]))));
+			}
+			if (j == points.size() - 2) { // j = points.size()-2, j+1 = points.size()-1, j+2 = 0,j -1 = points.size()-3
+				new_points.push_back(Ubpa::pointf2(0.5 * (points[points.size() - 2][0] + points[points.size() - 1][0]) +
+					alpha * (0.5 * (points[points.size() - 2][0] + points[points.size() - 1][0]) - 0.5 * (points[points.size() - 3][0] + points[0][0])),
+					0.5 * (points[points.size() - 2][1] + points[points.size() - 1][1]) +
+					alpha * (0.5 * (points[points.size() - 2][1] + points[points.size() - 1][1]) - 0.5 * (points[points.size() - 3][1] + points[0][1]))));
+			}
+			if (j == 0) {
+				// j = 0, j+1 = 1, j+2 = 2,j -1 = points.size()-1
+				new_points.push_back(Ubpa::pointf2(0.5 * (points[j][0] + points[j + 1][0]) +
+					alpha * (0.5 * (points[0][0] + points[ 1][0]) - 0.5 * (points[points.size() - 1][0] + points[ 2][0])),
+					0.5 * (points[0][1] + points[1][1]) +
+					alpha * (0.5 * (points[0][1] + points[1][1]) - 0.5 * (points[points.size() - 1][1] + points[2][1]))));
+			}
+
+		}
+	}
+	return new_points;
+}
 void CanvasSystem::OnUpdate(Ubpa::UECS::Schedule& schedule) {
 	schedule.RegisterCommand([](Ubpa::UECS::World* w) {
 		auto data = w->entityMngr.GetSingleton<CanvasData>();
@@ -180,6 +255,14 @@ void CanvasSystem::OnUpdate(Ubpa::UECS::Schedule& schedule) {
 			ImGui::Checkbox("Edit tangent", &data->edit_tan);
 			ImGui::Checkbox("Edit tangent line within the scope of G0", &data->g0);
 			ImGui::Checkbox("Edit tangent line within the scope of G1", &data->g1);
+			ImGui::Text("Approximate subdivision");
+			ImGui::Checkbox("Chaiukin subdivision(Quadratic B-splines)",&data->chaiukin_sub);
+			ImGui::DragInt("Iterate number",&data->chaiukin_num);
+			ImGui::Checkbox("Cubic B-spline subdivision",&data->cubic_sub);
+			ImGui::Text("Interpolating subdivision");
+			ImGui::Checkbox("inter_sub",&data->inter_sub);
+			ImGui::InputFloat("alpha",&data->alpha);
+
 
 			// Typically you would use a BeginChild()/EndChild() pair to benefit from a clipping region + own scrolling.
 			// Here we demonstrate that this can be replaced by simple offsetting + custom drawing + PushClipRect/PopClipRect() calls.
@@ -793,6 +876,53 @@ void CanvasSystem::OnUpdate(Ubpa::UECS::Schedule& schedule) {
 							ImVec2(origin.x + p[j + 1][0], origin.y + p[j + 1][1]), IM_COL32(233, 150, 50, 255), 4);
 				}
 
+			}
+			
+			if (data->chaiukin_sub) {
+				
+				vector<Ubpa::pointf2> work_points = data->points;
+				for (int i = 0; i < data->chaiukin_num;i++) {
+					vector<Ubpa::pointf2> temp = chaiukin_subdivide(work_points, false);
+					work_points = temp;
+				}
+				work_points.insert(work_points.begin(), data->points[0]);
+				work_points.push_back(data->points[data->points.size()-1]);
+				for (int i = 0; i < work_points.size()-1;i++) {
+					draw_list->AddCircleFilled(ImVec2(origin.x + work_points[i][0], origin.y + work_points[i][1]), 2.0f, IM_COL32(203, 100, 10, 255), 12);
+					draw_list->AddLine(ImVec2(origin.x + work_points[i][0], origin.y + work_points[i][1]),
+						ImVec2(origin.x + work_points[i+1][0], origin.y + work_points[i+1][1]), IM_COL32(233, 150, 50, 255), 2);
+				}
+
+			}
+			if (data->cubic_sub) {
+				vector<Ubpa::pointf2> work_points = data->points;
+				for (int i = 0; i < data->chaiukin_num;i++) {
+					vector<Ubpa::pointf2> temp = cubic_subdivide(work_points, false);
+					work_points = temp;
+				}
+				work_points.insert(work_points.begin(), data->points[0]);
+				work_points.push_back(data->points[data->points.size() - 1]);
+				for (int i = 0; i < work_points.size() - 1;i++) {
+					draw_list->AddCircleFilled(ImVec2(origin.x + work_points[i][0], origin.y + work_points[i][1]), 2.0f, IM_COL32(203, 100, 10, 255), 12);
+					draw_list->AddLine(ImVec2(origin.x + work_points[i][0], origin.y + work_points[i][1]),
+						ImVec2(origin.x + work_points[i + 1][0], origin.y + work_points[i + 1][1]), IM_COL32(233, 150, 50, 255), 2);
+				}
+
+			}
+			if (data->inter_sub) {
+				vector<Ubpa::pointf2> work_points = data->points;
+				for (int i = 0; i < data->chaiukin_num;i++) {
+					vector<Ubpa::pointf2> temp = inter_subdivide(work_points, true,data->alpha);
+					work_points = temp;
+				}
+				//work_points.insert(work_points.begin(), data->points[0]);
+				//work_points.push_back(data->points[data->points.size() - 1]);
+				for (int i = 0; i < work_points.size() - 1;i++) {
+					draw_list->AddCircleFilled(ImVec2(origin.x + work_points[i][0], origin.y + work_points[i][1]), 2.0f, IM_COL32(203, 100, 10, 255), 12);
+					draw_list->AddLine(ImVec2(origin.x + work_points[i][0], origin.y + work_points[i][1]),
+						ImVec2(origin.x + work_points[i + 1][0], origin.y + work_points[i + 1][1]), IM_COL32(233, 150, 50, 255), 2);
+				}
+			
 			}
 			if (data->opt_enable_grid)
 			{
